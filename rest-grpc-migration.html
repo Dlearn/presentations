@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+
+    <title>reveal.js</title>
+
+    <link rel="stylesheet" href="dist/reset.css" />
+    <link rel="stylesheet" href="dist/reveal.css" />
+    <link rel="stylesheet" href="dist/theme/sky.css" id="theme" />
+
+    <!-- Theme used for syntax highlighted code -->
+    <link
+      rel="stylesheet"
+      href="plugin/highlight/monokai.css"
+      id="highlight-theme"
+    />
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <section>
+          <h3 style="color: #ff2636">Carousell Web and gRPC</h3>
+          <p>A RFC to migrate from REST to gRPC</p>
+          <img
+            data-src="./rest-grpc-migration/rest-api.png"
+            style="height: 20vh"
+          />
+          <img data-src="./rest-grpc-migration/grpc.png" style="height: 20vh" />
+          <p>11 Jan 2021</p>
+        </section>
+        <section>
+          <h3>What is RPC in gRPC?</h3>
+          <ul>
+            <li>Based on RPC - Remote Procedure Call</li>
+            <li>
+              RPC is a form of Client-Server Communication, but uses functional
+              call rather than a usual HTTP call
+              <a
+                href="https://www.smashingmagazine.com/2016/09/understanding-rest-and-rpc-for-rest-apis/"
+                >More details</a
+              >
+            </li>
+            <li>
+              To define its functional call, it uses a IDL (Interface Definition
+              Language). <code>protobuf</code> is the most popular
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h3>What is gRPC</h3>
+          <img
+            data-src="./rest-grpc-migration/g-stands-for.png"
+            style="float: right; margin-left: 8px"
+          />
+          <p>
+            In 2015, Google open-sourced gRPC. But g doesn't stand for Google.
+          </p>
+        </section>
+        <section>
+          <h3>Why gRPC is more performant?</h3>
+          <ul>
+            <li>
+              It uses HTTP/2, which supports
+              <ul>
+                <li><code>Request/Response Multiplexing</code></li>
+                <li><code>Header Compression</code></li>
+              </ul>
+            </li>
+            <li>
+              Functional calls are strongly typed. Less 400 and unexpected
+              responses
+            </li>
+            <li>
+              gRPC is easier to use than REST for inter-microservice calls
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h3>Request/Response Multiplexing</h3>
+          <p>
+            Allows payloads from multiple requests with the same header, thus
+            identifying it as a single request
+          </p>
+          <img
+            data-src="./rest-grpc-migration/request-response-multiplexing.png"
+          />
+        </section>
+        <section>
+          <h3>Header Compression</h3>
+          <p>
+            HTTP/2 only sends the header value if it is different from the
+            previous header.
+          </p>
+          <img data-src="./rest-grpc-migration/header-compression.png" />
+        </section>
+        <section>
+          <h3>gRPC uses protobuf</h3>
+          <p>
+            Uses it's own compression mechanism which is more efficient than
+            JSON as bytes.
+          </p>
+          <a href="https://developers.google.com/protocol-buffers/docs/encoding"
+            >More details</a
+          >
+        </section>
+        <section>
+          <h3>Carousell Web's Setup</h3>
+          <p>data-service/middleware.js</p>
+          <pre><code data-line-numbers="9,11" data-trim>
+const res = await makeBackendRequest(
+  req,
+  "grpc/endpoint/",
+  {
+    data: protoRequest
+      .encode(protoRequest.create({ param }))
+      .finish(),
+    headers: { "content-type": "binary/octet-stream" },
+    method: "POST",
+    useProto: true, // superagent middleware turns it into a buffer
+  },
+);
+          </code></pre>
+        </section>
+        <section>
+          <h3>Carousell Web's Setup</h3>
+          <img data-src="./rest-grpc-migration/grpc-vs-rest.png" />
+        </section>
+        <section>
+          <h3>
+            The Solution:
+            <a href="https://grpc.io/blog/grpc-web-ga/">gRPC-Web</a>
+          </h3>
+          <p>Sample proto file</p>
+          <pre><code data-trim>
+syntax = "proto3";
+
+package todos;
+
+message Todo {
+  string content = 1;
+  bool finished = 2;
+}
+
+message GetTodoRequest {
+  int32 id = 1;
+}
+
+service TodoService {
+  rpc GetTodoById (GetTodoRequest) returns (Todo);
+}
+          </code></pre>
+        </section>
+        <section>
+          <h3>
+            The Solution:
+            <a href="https://grpc.io/blog/grpc-web-ga/">gRPC-Web</a>
+          </h3>
+          <p>Sample request file. No REST HTTP request</p>
+          <pre><code data-trim>
+const {GetTodoRequest} = require('./todos_pb.js');
+const {TodoServiceClient} = require('./todos_grpc_web_pb.js');
+
+const todoService = new proto.todos.TodoServiceClient('http://localhost:8080');
+const todoId = 1234;
+
+var getTodoRequest = new proto.todos.GetTodoRequest();
+getTodoRequest.setId(todoId);
+
+var metadata = {};
+var getTodo = todoService.getTodoById(getTodoRequest, metadata, (err, response) => {
+  if (err) {
+    console.log(err);
+  } else {
+    const todo = response.todo();
+    if (todo == null) {
+      console.log(`A TODO with the ID ${todoId} wasn't found`);
+    } else {
+      console.log(`Fetched TODO with ID ${todoId}: ${todo.content()}`);
+    }
+  }
+});
+          </code></pre>
+        </section>
+        <section>
+          <h3>Pros and Cons</h3>
+          <div style="display: flex">
+            <ul style="flex: 1 0 50%">
+              <li>Strongly typed requests and responses</li>
+              <li>Optimised performance</li>
+              <li>
+                No need to maintain separate data-service layer on web NodeJS
+                server
+              </li>
+            </ul>
+            <ul style="flex: 1 0 50%">
+              <li>Migration tech debt</li>
+              <li>Not all browsers support HTTP/2</li>
+              <li>No official React / gRPC integration yet</li>
+              <li>Developers might be unfamiliar with RPC and protobuf</li>
+              <li>Cannot use POSTMAN to debug endpoints</li>
+            </ul>
+          </div>
+        </section>
+        <section>
+          <h3>Next Steps</h3>
+          Migrate 1 service to gRPC-Web as a POC to find possible challenges.
+        </section>
+        <section>
+          <h3>References:</h3>
+          <ul>
+            <li>
+              <a
+                href="https://www.freecodecamp.org/news/what-is-grpc-protocol-buffers-stream-architecture/"
+                >Must read intro to gRPC</a
+              >
+            </li>
+            <li>
+              <a href="https://grpc.io/blog/grpc-web-ga/">Official gRPC Site</a>
+            </li>
+            <li>
+              <a
+                href="https://docs.google.com/document/d/1TtEzxZU4Ljbpk_OeNQakStrJSx56VkCAaqaFIhCPD0k/edit?usp=sharing"
+                >Org Wide RFC</a
+              >
+            </li>
+          </ul>
+        </section>
+      </div>
+    </div>
+
+    <script src="dist/reveal.js"></script>
+    <script src="plugin/notes/notes.js"></script>
+    <script src="plugin/markdown/markdown.js"></script>
+    <script src="plugin/highlight/highlight.js"></script>
+    <script>
+      // More info about initialization & config:
+      // - https://revealjs.com/initialization/
+      // - https://revealjs.com/config/
+      Reveal.initialize({
+        hash: true,
+
+        // Learn about plugins: https://revealjs.com/plugins/
+        plugins: [RevealMarkdown, RevealHighlight, RevealNotes],
+      });
+    </script>
+  </body>
+</html>
